@@ -48,6 +48,37 @@ const TIER_DEFAULT = {
   'T3-FULL': null,  // Claude
 };
 
+// Call Qwen and transparently fall back to Claude if Qwen is unavailable
+// (cold start, rate limit, empty response, missing config, etc.).
+export async function callQwenWithFallback({ endpoint, model, system, user, messages, options = {} }) {
+  const qwenMessages = messages || [
+    ...(system ? [{ role: 'system', content: system }] : []),
+    ...(user   ? [{ role: 'user',   content: user   }] : []),
+  ];
+
+  const enableThinking = options.thinking ||
+    ((options.complexityScore || 0) > parseFloat(process.env.QWEN_THINKING_THRESHOLD || '0.7'));
+
+  const result = await callQwen({
+    endpoint, model, messages: qwenMessages,
+    enableThinking,
+    maxTokens: options.maxTokens || 2048,
+    temperature: options.temperature || 0.7,
+  });
+
+  if (!result?.text) {
+    console.warn('[ModelRouter] Qwen unavailable, falling back to Claude');
+    const fallback = await callClaude({
+      system,
+      user: user || qwenMessages.map(m => m.content).join('\n\n'),
+      model: 'claude-sonnet-4-6',
+    });
+    return { ...fallback, model: 'claude-fallback', provider: 'claude' };
+  }
+
+  return { ...result, model: 'qwen', endpoint, qwenModel: model, provider: 'qwen' };
+}
+
 export async function routeTask({
   taskType,
   agentTier,
@@ -65,29 +96,9 @@ export async function routeTask({
   if (isQwen) {
     const endpoint = routing.url();
     const model = routing.model();
-    const enableThinking = options.thinking ||
-      ((options.complexityScore || 0) > parseFloat(process.env.QWEN_THINKING_THRESHOLD || '0.7'));
 
-    const qwenMessages = messages || [
-      ...(system ? [{ role: 'system', content: system }] : []),
-      ...(user   ? [{ role: 'user',   content: user   }] : []),
-    ];
-
-    const result = await callQwen({
-      endpoint, model, messages: qwenMessages,
-      enableThinking,
-      maxTokens: options.maxTokens || 2048,
-      temperature: options.temperature || 0.7,
-    });
-
-    // Fallback to Claude if Qwen unavailable (cold start, rate limit, etc.)
-    if (!result?.text) {
-      console.warn('[ModelRouter] Qwen unavailable, falling back to Claude');
-      const fallback = await callClaude({ system, user, model: 'claude-sonnet-4-6' });
-      return { ...fallback, model: 'claude-fallback' };
-    }
-
-    return { ...result, model: 'qwen', endpoint, qwenModel: model };
+    // Qwen with transparent Claude fallback.
+    return callQwenWithFallback({ endpoint, model, system, user, messages, options });
   }
 
   // Route to Claude

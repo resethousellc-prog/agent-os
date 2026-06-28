@@ -10,6 +10,13 @@ export function useWorkspace() {
     api.get('/workspaces/mine')
       .then(({ data }) => {
         setWorkspace(data.workspace)
+        // Apply white-label branding as soon as the workspace loads.
+        if (data.workspace?.branding?.primary_color) {
+          document.documentElement.style.setProperty('--color-primary', data.workspace.branding.primary_color)
+        }
+        if (data.workspace?.branding?.app_name) {
+          document.title = data.workspace.branding.app_name
+        }
         setLoading(false)
       })
       .catch(() => {

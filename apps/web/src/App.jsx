@@ -8,6 +8,7 @@ import Playbook from './views/Playbook'
 import Command from './views/Command'
 import Huddle from './views/Huddle'
 import AgentPortal from './views/AgentPortal'
+import WorkspaceSettings from './views/WorkspaceSettings'
 import AuthPage from './views/AuthPage'
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/command"    element={<Command />} />
           <Route path="/huddle"     element={<Huddle />} />
           <Route path="/agent-portal" element={<AgentPortal />} />
+          <Route path="/settings"   element={<WorkspaceSettings />} />
         </Routes>
       </Layout>
     </BrowserRouter>
