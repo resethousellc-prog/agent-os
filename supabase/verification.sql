@@ -9,9 +9,9 @@ SELECT id, name, plan FROM workspaces WHERE id = '00000000-0000-0000-0000-000000
 SELECT COUNT(*) FROM departments WHERE workspace_id = '00000000-0000-0000-0000-000000000001';
 -- Expected: 22
 
--- 3. All 31 tools seeded
+-- 3. All 29 tools seeded
 SELECT COUNT(*) FROM agent_tools;
--- Expected: 31
+-- Expected: 29
 
 -- 4. Tool breakdown by platform
 SELECT platform, COUNT(*) FROM agent_tools GROUP BY platform ORDER BY platform;
