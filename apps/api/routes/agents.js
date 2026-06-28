@@ -334,6 +334,34 @@ router.post('/:id/attributes/override', async (req, res) => {
   }
 });
 
+// PUT /api/agents/:id/promote-status — set agent lifecycle status
+router.put('/:id/promote-status', async (req, res) => {
+  const { status } = req.body;
+  const validStatuses = ['active', 'production_ready', 'suspended', 'retired'];
+  if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('wis_agents')
+      .update({ status })
+      .eq('id', req.params.id)
+      .eq('workspace_id', req.user.workspaceId)
+      .select().single();
+    if (error) throw error;
+
+    await supabaseAdmin.from('agent_development_log').insert({
+      workspace_id: req.user.workspaceId,
+      agent_id:     req.params.id,
+      event_type:   status === 'production_ready' ? 'production_graduated' : 'attribute_update',
+      event_detail: { new_status: status },
+      triggered_by: 'fab',
+    });
+
+    res.json({ agent: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/agents/:id — update agent; suspending auto-escalates active threads
 router.put('/:id', async (req, res) => {
   try {

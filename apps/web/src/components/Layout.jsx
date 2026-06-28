@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Users, BarChart3, BookOpen, Building2, MessageSquare, Zap, LogOut, Bot } from 'lucide-react'
+import { Users, BarChart3, BookOpen, Building2, MessageSquare, Zap, LogOut, Bot, Settings } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useWorkspace } from '../hooks/useWorkspace'
 import EscalationTray from './EscalationTray'
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { path: '/command',    icon: Building2,      label: 'Command',     sub: 'Departments' },
   { path: '/huddle',     icon: MessageSquare,  label: 'The Huddle',  sub: 'Live interactions' },
   { path: '/agent-portal', icon: Bot,          label: 'Agent Portal', sub: 'Activity & tools' },
+  { path: '/settings',   icon: Settings,       label: 'Settings',     sub: 'Workspace & branding' },
 ]
 
 export default function Layout({ children }) {
