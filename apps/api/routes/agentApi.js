@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { agentAuth, requireScope } from '../middleware/agentAuth.js';
 import { supabaseAdmin } from '../services/supabase.js';
 // escalationAlertQueue is used by the escalations + tool-execute routes below.
-// Imported here (fail-soft when REDIS_URL is unset) so the routes have it in scope.
-import { escalationAlertQueue } from '../services/bullmq.js';
+// agentInboxQueue delivers A2A messages to the recipient agent's worker.
+// Imported here (fail-soft when REDIS_URL is unset) so the routes have them in scope.
+import { escalationAlertQueue, agentInboxQueue } from '../services/bullmq.js';
 
 const router = Router();
 router.use(agentAuth);
@@ -92,6 +93,57 @@ router.post('/escalations', requireScope('escalations:write'), async (req, res) 
   });
 
   res.status(201).json({ escalation });
+});
+
+// POST /api/agent/messages — send an A2A message into a thread
+router.post('/messages', requireScope('messages:write'), async (req, res) => {
+  const { thread_id, loop_id, recipient_agent_id, message_type, round_number,
+          payload, attachments, requires_response, response_deadline } = req.body;
+
+  if (!thread_id || !loop_id || !message_type) {
+    return res.status(400).json({ error: 'thread_id, loop_id and message_type are required' });
+  }
+
+  // Verify the thread belongs to the sender's workspace.
+  const { data: thread } = await supabaseAdmin
+    .from('interaction_threads')
+    .select('id')
+    .eq('id', thread_id)
+    .eq('workspace_id', req.workspaceId)
+    .single();
+
+  if (!thread) return res.status(404).json({ error: 'Thread not found' });
+
+  const { data: message, error } = await supabaseAdmin
+    .from('agent_messages')
+    .insert({
+      thread_id,
+      loop_id,
+      sender_agent_id: req.agent.id,
+      recipient_agent_id,
+      message_type,
+      round_number: round_number || 1,
+      payload: payload || {},
+      attachments: attachments || [],
+      requires_response: !!requires_response,
+      response_deadline,
+    })
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Deliver to the recipient agent's inbox worker.
+  if (recipient_agent_id) {
+    await agentInboxQueue.add('A2A-MESSAGE', {
+      recipient_agent_id,
+      message_id: message.id,
+      thread_id,
+      workspace_id: req.workspaceId,
+    });
+  }
+
+  res.status(201).json({ message });
 });
 
 // GET /api/agent/tools — my available tools

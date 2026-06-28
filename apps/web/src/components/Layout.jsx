@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { Users, BarChart3, BookOpen, Building2, MessageSquare, Zap, LogOut } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useWorkspace } from '../hooks/useWorkspace'
+import EscalationTray from './EscalationTray'
 
 const NAV_ITEMS = [
   { path: '/draft-room', icon: Zap,           label: 'Draft Room',  sub: 'Build agents' },
@@ -80,7 +81,10 @@ export default function Layout({ children }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto pb-10">{children}</main>
+
+      {/* Persistent escalation tray */}
+      <EscalationTray />
     </div>
   )
 }

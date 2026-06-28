@@ -119,4 +119,54 @@ router.put('/:id/promote', async (req, res) => {
   res.json({ success: true, new_tier: newTier });
 });
 
+// POST /api/agents/:id/train — start training run
+router.post('/:id/train', async (req, res) => {
+  const { platform = 'ghl', batch_size = 100 } = req.body;
+
+  const { trainingQueue } = await import('../workers/trainingWorker.js');
+  const job = await trainingQueue.add('TRAINING-BATCH', {
+    agent_id: req.params.id,
+    platform,
+    batch_size,
+  });
+
+  res.json({ job_id: job.id, message: 'Training started' });
+});
+
+// POST /api/agents/training/generate-scenarios
+router.post('/training/generate-scenarios', async (req, res) => {
+  const { platform, count = 500 } = req.body;
+  const { trainingQueue } = await import('../workers/trainingWorker.js');
+  const job = await trainingQueue.add('GENERATE-SCENARIOS', { platform, count });
+  res.json({ job_id: job.id });
+});
+
+// GET /api/agents/:id/training-status
+router.get('/:id/training-status', async (req, res) => {
+  const { data: results } = await supabaseAdmin
+    .from('training_results')
+    .select('passed, score, run_at, system_prompt_version')
+    .eq('agent_id', req.params.id)
+    .order('run_at', { ascending: false })
+    .limit(100);
+
+  const passRate = results?.length
+    ? results.filter(r => r.passed).length / results.length * 100
+    : 0;
+
+  const { data: agent } = await supabaseAdmin
+    .from('wis_agents')
+    .select('status')
+    .eq('id', req.params.id)
+    .single();
+
+  res.json({
+    agent_status: agent?.status,
+    pass_rate: passRate,
+    total_runs: results?.length || 0,
+    recent_runs: results?.slice(0, 10),
+    graduation_threshold: parseInt(process.env.TRAINING_PASS_THRESHOLD || '95'),
+  });
+});
+
 export default router;
