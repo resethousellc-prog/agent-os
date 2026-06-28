@@ -76,4 +76,26 @@ router.get('/workflows/:id', async (req, res) => {
   });
 });
 
+// GET /api/monitor/:workflowId — Batch D shape (workflow_id, runs, totals)
+router.get('/:workflowId', async (req, res) => {
+  const { data: runs, error } = await supabaseAdmin
+    .from('workflow_runs')
+    .select('*')
+    .eq('workflow_id', req.params.workflowId)
+    .eq('workspace_id', req.workspaceId)
+    .order('started_at', { ascending: false })
+    .limit(50);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const total = runs?.length || 0;
+  const successful = runs?.filter(r => r.status === 'success').length || 0;
+  res.json({
+    workflow_id: req.params.workflowId,
+    runs: runs || [],
+    total_runs: total,
+    success_rate: total > 0 ? (successful / total) * 100 : 0,
+  });
+});
+
 export default router;

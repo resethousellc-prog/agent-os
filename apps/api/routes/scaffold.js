@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { humanAuth } from '../middleware/humanAuth.js';
 import { callClaude } from '../services/claude.js';
+import { routeTask } from '../services/modelRouter.js';
 import { supabaseAdmin } from '../services/supabase.js';
 
 const router = Router();
@@ -37,44 +38,37 @@ Return ONLY valid JSON matching this exact structure:
   "estimated_runtime": "30s|2min|5min"
 }`;
 
-// POST /api/scaffold
+// POST /api/scaffold — generate a workflow scaffold (Session 7: returned, not saved).
+// The UI reviews/edits the steps then saves via POST /api/workflows ("Save to Library").
 router.post('/', async (req, res) => {
   const { goal, platform, department, trigger_type, complexity } = req.body;
-  if (!goal) return res.status(400).json({ error: 'goal is required' });
+  if (!goal) return res.status(400).json({ error: 'goal required' });
 
-  const result = await callClaude({
-    system: SCAFFOLD_SYSTEM,
-    user: `Goal: ${goal}
+  try {
+    const result = await routeTask({
+      taskType: 'workflow_design',  // routes to Claude (T2/T3 non-negotiable)
+      agentTier: 'T2-HIGH',
+      system: SCAFFOLD_SYSTEM,
+      user: `Goal: ${goal}
 Platform: ${platform || 'multi'}
 Department: ${department || 'any'}
 Trigger type: ${trigger_type || 'event'}
 Complexity: ${complexity || 'medium'}
 
 Generate a complete workflow scaffold JSON.`,
-    model: 'claude-sonnet-4-6',
-  });
+    });
 
-  if (!result?.text) return res.status(500).json({ error: 'Scaffold generation failed' });
+    let scaffold;
+    try {
+      const text = result?.content?.[0]?.text || result?.text || '';
+      scaffold = JSON.parse(text.replace(/```json|```/g, '').trim());
+    } catch {
+      return res.status(500).json({ error: 'Failed to parse scaffold from model' });
+    }
 
-  try {
-    const scaffold = JSON.parse(result.text.replace(/```json|```/g, '').trim());
-
-    // Save as draft workflow
-    const { data: workflow } = await supabaseAdmin
-      .from('workflows')
-      .insert({
-        workspace_id: req.workspaceId,
-        ...scaffold,
-        scaffold_goal: goal,
-        status: 'draft',
-        created_by: req.user.id,
-      })
-      .select()
-      .single();
-
-    res.json({ workflow, scaffold });
+    res.json({ scaffold });
   } catch (err) {
-    res.status(500).json({ error: 'Invalid scaffold JSON', raw: result.text });
+    res.status(500).json({ error: err.message });
   }
 });
 

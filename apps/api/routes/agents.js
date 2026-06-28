@@ -169,4 +169,211 @@ router.get('/:id/training-status', async (req, res) => {
   });
 });
 
+// ── Session 6: agent builds (draft picks) ──────────────────────────────────
+
+// GET /api/agents/builds/pending — pending agent builds
+router.get('/builds/pending', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('agent_builds')
+      .select('*')
+      .eq('workspace_id', req.user.workspaceId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ builds: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agents/builds/:buildId/approve
+router.post('/builds/:buildId/approve', async (req, res) => {
+  const { buildId } = req.params;
+  const { review_notes } = req.body;
+  try {
+    const { data: build } = await supabaseAdmin
+      .from('agent_builds').select('*').eq('id', buildId).single();
+
+    // Create the agent from the draft spec
+    const { data: agent } = await supabaseAdmin
+      .from('wis_agents')
+      .insert({ ...build.draft_spec, workspace_id: req.user.workspaceId, status: 'active' })
+      .select().single();
+
+    // Update build status
+    await supabaseAdmin.from('agent_builds').update({
+      status: 'activated',
+      reviewed_by: req.user.id || 'fab',
+      review_notes,
+      resulting_agent_id: agent.id,
+    }).eq('id', buildId);
+
+    res.json({ agent });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agents/builds/:buildId/reject
+router.post('/builds/:buildId/reject', async (req, res) => {
+  const { buildId } = req.params;
+  const { review_notes } = req.body;
+  try {
+    await supabaseAdmin.from('agent_builds').update({
+      status: 'rejected',
+      reviewed_by: req.user.id || 'fab',
+      review_notes,
+    }).eq('id', buildId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agents/:id/attributes — seed/snapshot attributes
+router.post('/:id/attributes', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin.from('agent_attributes').insert({
+      workspace_id: req.user.workspaceId,
+      agent_id: req.params.id,
+      ...req.body,
+    }).select().single();
+    if (error) throw error;
+    res.json({ attributes: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agents/:id/development — log a development event
+router.post('/:id/development', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin.from('agent_development_log').insert({
+      workspace_id: req.user.workspaceId,
+      agent_id: req.params.id,
+      ...req.body,
+    }).select().single();
+    if (error) throw error;
+    res.json({ event: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Session 8: Film Room reads + overrides ─────────────────────────────────
+
+// GET /api/agents/:id/development — development log
+router.get('/:id/development', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('agent_development_log')
+      .select('*')
+      .eq('agent_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ events: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/agents/:id/attributes/history
+router.get('/:id/attributes/history', async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('agent_attributes')
+      .select('*')
+      .eq('agent_id', req.params.id)
+      .order('recorded_at', { ascending: false })
+      .limit(90);
+    if (error) throw error;
+    const latest = data?.[0] || null;
+    res.json({ history: data || [], latest });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/agents/:id/attributes/override — manual attribute override
+router.post('/:id/attributes/override', async (req, res) => {
+  try {
+    const { attribute, value, note } = req.body;
+    const { data: current } = await supabaseAdmin
+      .from('agent_attributes')
+      .select('*')
+      .eq('agent_id', req.params.id)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    const base = { ...(current || {}) };
+    delete base.id;
+    delete base.recorded_at;
+    const updated = { ...base, [attribute]: value, override_by: 'fab', override_note: note };
+
+    const { data, error } = await supabaseAdmin.from('agent_attributes').insert({
+      workspace_id: req.user.workspaceId,
+      agent_id: req.params.id,
+      ...updated,
+    }).select().single();
+    if (error) throw error;
+
+    await supabaseAdmin.from('agent_development_log').insert({
+      workspace_id: req.user.workspaceId,
+      agent_id: req.params.id,
+      event_type: 'manual_override',
+      event_detail: { attribute, value, note },
+      triggered_by: 'fab',
+    });
+
+    res.json({ attributes: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/agents/:id — update agent; suspending auto-escalates active threads
+router.put('/:id', async (req, res) => {
+  try {
+    const { data: agent, error } = await supabaseAdmin
+      .from('wis_agents')
+      .update(req.body)
+      .eq('id', req.params.id)
+      .eq('workspace_id', req.user.workspaceId)
+      .select().single();
+    if (error) throw error;
+
+    if (req.body.status === 'suspended') {
+      const { data: activeThreads } = await supabaseAdmin
+        .from('interaction_threads')
+        .select('id')
+        .contains('participant_agent_ids', [req.params.id])
+        .eq('status', 'active');
+
+      for (const thread of activeThreads || []) {
+        await supabaseAdmin.from('interaction_threads').update({
+          status: 'escalated',
+          escalated_to: 'human',
+          escalation_reason: `Participant agent ${req.params.id} suspended mid-thread`,
+        }).eq('id', thread.id);
+
+        await supabaseAdmin.from('escalations').insert({
+          workspace_id: req.user.workspaceId,
+          thread_id: thread.id,
+          escalated_by: null,
+          escalated_to: 'human',
+          reason: 'Agent benched mid-thread',
+          context: { agent_id: req.params.id },
+        });
+      }
+    }
+
+    res.json({ agent });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

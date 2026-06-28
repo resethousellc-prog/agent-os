@@ -17,6 +17,8 @@ export async function humanAuth(req, res, next) {
   if (!workspace) return res.status(403).json({ error: 'No workspace found' });
 
   req.user = user;
+  // Expose workspaceId both directly and on req.user (Batch D routes read req.user.workspaceId).
+  req.user.workspaceId = workspace.id;
   req.workspaceId = workspace.id;
   req.workspace = workspace;
   next();

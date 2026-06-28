@@ -54,13 +54,63 @@ Suggest specific improvements. Return JSON: { analysis, suggestions: [], impact_
   return { analyzed: flaggedLoops?.length || 0 };
 }
 
+// Session 7: analyze a single under-performing workflow and store an improvement
+// (with suggested updated_steps the UI can diff and apply).
+export async function analyzeWorkflow(workflowId, workspaceId, successRate) {
+  const { data: workflow } = await supabaseAdmin
+    .from('workflows').select('*').eq('id', workflowId).single();
+  if (!workflow) return { skipped: true };
+
+  const { data: runs } = await supabaseAdmin
+    .from('workflow_runs')
+    .select('status, error_log, output_payload')
+    .eq('workflow_id', workflowId)
+    .order('started_at', { ascending: false })
+    .limit(20);
+
+  const failures = (runs || []).filter(r => r.status === 'failed').slice(0, 5);
+
+  const result = await callClaude({
+    system: 'You analyze AI automation workflow performance and propose improved steps. Return JSON only.',
+    user: `Workflow: ${workflow.name}
+Platform: ${workflow.platform}
+Current steps: ${JSON.stringify(workflow.steps)}
+Success rate: ${successRate ?? 'unknown'}%
+Recent failures: ${JSON.stringify(failures)}
+
+Identify why it fails and propose an improved step list.
+Return JSON: { "analysis": "...", "suggestions": [{ "updated_steps": [...] }], "impact_level": "high|medium|low" }`,
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4000,
+  });
+
+  if (!result?.text) return { analyzed: false };
+
+  try {
+    const parsed = JSON.parse(result.text.replace(/```json|```/g, '').trim());
+    await supabaseAdmin.from('improvements').insert({
+      workspace_id: workspaceId,
+      workflow_id: workflowId,
+      generated_by: 'scheduled_analysis',
+      analysis: parsed.analysis,
+      suggestions: parsed.suggestions,
+      impact_level: parsed.impact_level || 'medium',
+    });
+  } catch { /* skip malformed analysis */ }
+
+  return { analyzed: true };
+}
+
 export const improvementWorker = connection
   ? new Worker(
       'improvement-cycle',
       async (job) => {
-        // Workflow-level analysis is handled inline by the agent run logger;
-        // the nightly job sweeps flagged interaction loops here.
         console.log('[improvementWorker] received', job.name, job.id);
+        // Session 7: targeted workflow analysis (enqueued by the agent run logger).
+        if (job.name === 'IMPROVEMENT-ANALYSIS') {
+          return analyzeWorkflow(job.data.workflow_id, job.data.workspace_id, job.data.success_rate);
+        }
+        // Session 9: nightly sweep of flagged interaction loops.
         const loops = await analyzeFlaggedLoops();
         return { ok: true, ...loops };
       },

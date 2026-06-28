@@ -7,6 +7,7 @@ import FilmRoom from './views/FilmRoom'
 import Playbook from './views/Playbook'
 import Command from './views/Command'
 import Huddle from './views/Huddle'
+import AgentPortal from './views/AgentPortal'
 import AuthPage from './views/AuthPage'
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/playbook"   element={<Playbook />} />
           <Route path="/command"    element={<Command />} />
           <Route path="/huddle"     element={<Huddle />} />
+          <Route path="/agent-portal" element={<AgentPortal />} />
         </Routes>
       </Layout>
     </BrowserRouter>

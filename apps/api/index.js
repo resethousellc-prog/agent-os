@@ -14,7 +14,11 @@ import loopsRouter from './routes/loops.js';
 import threadsRouter from './routes/threads.js';
 import escalationsRouter from './routes/escalations.js';
 import chemistryRouter from './routes/chemistry.js';
+import workflowRunsRouter from './routes/workflowRuns.js';
 import a2aRouter from './routes/a2a.js';
+
+// Side-effect: start the weekly attribute recalc worker (fail-soft without Redis).
+import './workers/attributeWorker.js';
 
 const app = express();
 app.use(cors({ origin: process.env.FRONTEND_URL }));
@@ -36,6 +40,7 @@ app.use('/api/loops', loopsRouter);
 app.use('/api/threads', threadsRouter);
 app.use('/api/escalations', escalationsRouter);
 app.use('/api/chemistry', chemistryRouter);
+app.use('/api/workflow-runs', workflowRunsRouter);
 
 // Agent API (key auth)
 app.use('/api/agent', agentApiRouter);

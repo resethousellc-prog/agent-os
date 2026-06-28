@@ -1,98 +1,49 @@
 import { useState } from 'react'
+import { useAgents } from '../hooks/useAgents'
+import { api } from '../lib/api'
+import AgentCreator from '../components/AgentCreator'
+import DraftPickCard from '../components/DraftPickCard'
+import AgentProfile from '../components/AgentProfile'
 import TierBadge from '../components/TierBadge'
-import AttributeBar from '../components/AttributeBar'
-import { Zap } from 'lucide-react'
-
-const DEFAULT_ATTRIBUTES = {
-  reasoning_depth:    50,
-  execution_speed:    50,
-  reliability:        50,
-  creativity:         50,
-  autonomy:           50,
-  communication:      50,
-  collaboration_score:50,
-  delegation_quality: 50,
-}
+import StatusBadge from '../components/StatusBadge'
+import { Zap, Search } from 'lucide-react'
+import { useEffect } from 'react'
 
 export default function DraftRoom() {
-  const [mode, setMode] = useState('list') // 'list' | 'create'
-  const [attrs, setAttrs] = useState(DEFAULT_ATTRIBUTES)
-  const [tier, setTier] = useState('T1-EXEC')
-  const [agentName, setAgentName] = useState('')
+  const { agents, loading, error } = useAgents()
+  const [mode, setMode]             = useState('list') // 'list' | 'create'
+  const [builds, setBuilds]         = useState([])
+  const [selected, setSelected]     = useState(null)
+  const [search, setSearch]         = useState('')
+  const [agentList, setAgentList]   = useState(agents)
 
-  const updateAttr = (key, val) => setAttrs(prev => ({ ...prev, [key]: val }))
+  useEffect(() => { setAgentList(agents) }, [agents])
 
-  if (mode === 'create') return (
-    <div className="p-8 max-w-2xl mx-auto">
-      <div className="flex items-center gap-3 mb-8">
-        <button
-          onClick={() => setMode('list')}
-          className="text-[#94A3B8] hover:text-white transition-colors text-lg"
-        >
-          ←
-        </button>
-        <h1 className="text-2xl font-bold">Draft New Agent</h1>
-      </div>
+  useEffect(() => {
+    api.get('/agents/builds/pending')
+      .then(({ data }) => setBuilds(data.builds || []))
+      .catch(() => {})
+  }, [])
 
-      {/* Agent name */}
-      <div className="bg-[#12121A] border border-[#1E1E2E] rounded-xl p-6 mb-6">
-        <div className="text-sm text-[#94A3B8] mb-3 uppercase tracking-wider">Agent Name</div>
-        <input
-          type="text"
-          value={agentName}
-          onChange={e => setAgentName(e.target.value)}
-          placeholder="e.g. Content Ops Alpha"
-          className="w-full bg-[#0A0A0F] border border-[#1E1E2E] rounded-lg px-4 py-3 text-[#F8FAFC] placeholder-[#94A3B8]/50 focus:outline-none focus:border-amber-400/50 transition-colors"
-        />
-      </div>
-
-      {/* Tier selector */}
-      <div className="bg-[#12121A] border border-[#1E1E2E] rounded-xl p-6 mb-6">
-        <div className="text-sm text-[#94A3B8] mb-3 uppercase tracking-wider">Select Tier</div>
-        <div className="flex gap-3">
-          {['T1-EXEC', 'T2-HIGH', 'T3-FULL'].map(t => (
-            <button
-              key={t}
-              onClick={() => setTier(t)}
-              className={`flex-1 py-3 rounded-lg border transition-all font-bold font-mono text-sm ${
-                tier === t
-                  ? t === 'T3-FULL' ? 'bg-amber-400/20 border-amber-400 text-amber-400'
-                  : t === 'T2-HIGH' ? 'bg-blue-400/20  border-blue-400  text-blue-400'
-                  :                   'bg-green-400/20 border-green-400 text-green-400'
-                  : 'border-[#1E1E2E] text-[#94A3B8] hover:border-white/20'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Attribute sliders — all 8 from the schema */}
-      <div className="bg-[#12121A] border border-[#1E1E2E] rounded-xl p-6 mb-6">
-        <div className="text-sm text-[#94A3B8] mb-4 uppercase tracking-wider">Attributes</div>
-        <div className="space-y-5">
-          {Object.entries(attrs).map(([key, val]) => (
-            <AttributeBar key={key} name={key} value={val} onChange={updateAttr} />
-          ))}
-        </div>
-      </div>
-
-      <button
-        disabled={!agentName.trim()}
-        className="w-full py-4 bg-amber-400 text-black font-bold rounded-xl hover:bg-amber-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-      >
-        <Zap size={20} />
-        Deploy Agent
-      </button>
-      <p className="text-center text-xs text-[#94A3B8] mt-3">
-        Full agent creation with system prompt and tool assignment built in Session 6
-      </p>
-    </div>
+  const filtered = agentList.filter(a =>
+    (a.display_name || a.name).toLowerCase().includes(search.toLowerCase())
   )
+
+  if (mode === 'create') {
+    return (
+      <AgentCreator
+        onDeployed={(agent) => {
+          setAgentList(prev => [agent, ...prev])
+          setMode('list')
+        }}
+        onCancel={() => setMode('list')}
+      />
+    )
+  }
 
   return (
     <div className="p-8">
+      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold">Draft Room</h1>
@@ -108,15 +59,71 @@ export default function DraftRoom() {
       </div>
 
       {/* Incoming draft picks */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold mb-4 text-amber-400">📬 Incoming Draft Picks</h2>
-        <div className="bg-[#12121A] border border-[#1E1E2E] rounded-xl p-8 text-center text-[#94A3B8]">
-          No pending draft picks
-          <p className="text-xs mt-1 text-[#94A3B8]/60">
-            Builder agents will submit specs here — built in Session 6
-          </p>
+      {builds.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold mb-4 text-amber-400">📬 Incoming Draft Picks</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {builds.map(build => (
+              <DraftPickCard
+                key={build.id}
+                build={build}
+                onAction={(id, action) => setBuilds(prev => prev.filter(b => b.id !== id))}
+              />
+            ))}
+          </div>
         </div>
+      )}
+
+      {/* Search */}
+      <div className="relative mb-6">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search agents..."
+          className="w-full bg-[#12121A] border border-[#1E1E2E] rounded-xl pl-9 pr-4 py-2.5 text-sm text-[#F8FAFC] placeholder-[#94A3B8]/50 focus:outline-none focus:border-amber-400/50 transition-colors"
+        />
       </div>
+
+      {/* Agent grid */}
+      {loading ? (
+        <div className="text-[#94A3B8] animate-pulse">Loading roster...</div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-[#12121A] border border-[#1E1E2E] rounded-xl p-12 text-center text-[#94A3B8]">
+          <div className="text-4xl mb-4">👤</div>
+          <div className="font-semibold mb-1">No agents yet</div>
+          <div className="text-xs opacity-60">Draft your first agent to get started</div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map(agent => (
+            <div
+              key={agent.id}
+              onClick={() => setSelected(agent)}
+              className="bg-[#12121A] border border-[#1E1E2E] rounded-xl p-5 hover:border-white/20 transition-all cursor-pointer animate-agent-deploy"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">{agent.display_name || agent.name}</div>
+                  <div className="text-xs text-[#94A3B8] mt-0.5">{agent.department}</div>
+                </div>
+                <TierBadge tier={agent.tier} />
+              </div>
+              <StatusBadge status={agent.status} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Agent profile slide-in */}
+      <AgentProfile
+        agent={selected}
+        onClose={() => setSelected(null)}
+        onUpdate={(updated) => {
+          setAgentList(prev => prev.map(a => a.id === updated.id ? updated : a))
+          setSelected(updated)
+        }}
+      />
     </div>
   )
 }

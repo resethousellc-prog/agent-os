@@ -21,6 +21,20 @@ export default {
       fontFamily: {
         mono: ['JetBrains Mono', 'Consolas', 'monospace'],
       },
+      animation: {
+        'agent-deploy': 'agentDeploy 400ms ease-out forwards',
+        'tier-glow': 'tierGlow 2s ease-in-out infinite',
+      },
+      keyframes: {
+        agentDeploy: {
+          'from': { transform: 'scale(0.8)', opacity: '0' },
+          'to':   { transform: 'scale(1)',   opacity: '1' },
+        },
+        tierGlow: {
+          '0%, 100%': { opacity: '1' },
+          '50%':      { opacity: '0.6' },
+        },
+      },
     },
   },
   plugins: [],
